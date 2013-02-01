@@ -28,7 +28,7 @@ commander.prompt('Username: ')
     selectPage(pages)
   .then (page) ->
     repo = new Git "#{GITHUB_REMOTE_URL}#{project}.wiki.git"
-    fs.exists(repo.rootPath)
+    repo.exists()
     .then (exists) ->
       if !exists
         repo.clone()
