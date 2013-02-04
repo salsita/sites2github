@@ -8,6 +8,7 @@ Git = (require './git').Git
 fs = require 'q-io/fs'
 url = require 'url'
 path = require 'path'
+_s = require 'underscore.string'
 
 SITE_DOMAIN = 'salsitasoft.com'
 SITE_NAME = 'wiki'
@@ -20,7 +21,7 @@ commander.prompt('Username: ')
   .then (password) ->
     site = new GoogleSite SITE_DOMAIN, SITE_NAME
     site.authenticate(username, password)
-    .then () ->
+    .then ->
       commander.prompt('Project: ')
 .then (project) ->
   site.listPages('/projects/' + project)
@@ -34,18 +35,18 @@ commander.prompt('Username: ')
         repo.clone()
       else
         return q.resolve true
-    .then () ->
+    .then ->
       transferPage(site, repo, page.name, page.url)
-    .then () ->
+    .then ->
       repo.commit "Migrated #{page.name} from Google Sites"
-    .then () ->
+    .then ->
       repo.push()
-.then () ->
+.then ->
   console.log 'All done'
 .fail (error) ->
   console.error error.stack
   console.error error
-.finally () ->
+.finally ->
   process.exit(0)
 .done()
 
@@ -75,12 +76,12 @@ transferPage = (site, repo, pageName, pageURL) ->
     filename = "#{repo.rootPath}/#{pageName}.md"
     console.log(filename)
     fs.write(filename, result.markdown)
-    .then () ->
+    .then ->
       repo.add filename
-    .then () ->
+    .then ->
       console.log 'Getting images'
       imagesPath = "#{repo.rootPath}/images"
-      q.when (result.images.length == 0 || createImagesFolder(imagesPath)), () ->
+      q.when (result.images.length == 0 || createImagesFolder(imagesPath)), ->
         promises = []
         for image in result.images
           # Remove the fragment from the URL, if any
@@ -89,23 +90,28 @@ transferPage = (site, repo, pageName, pageURL) ->
           console.log "Copying #{remoteURL} to #{repo.rootPath}/#{image.localPath}"
           promise = site.getFile(remoteURL, "#{repo.rootPath}/#{image.localPath}")
           promises.push promise
-        q.spread promises, () ->
+        q.all(promises)
+        .then ->
           for filePath in arguments
             repo.add filePath
           deferred.resolve()
   .done()
   return deferred.promise
 
-selectPage = (pages) ->
-  names = []
-  deferred = q.defer()
+displayPages = (pages, depth, results) ->
   for name of pages
-    index = names.length+1
-    console.log '[' + index + '] ' + name
-    names.push name
+    index = results.length+1
+    console.log "[#{index}] #{_s.repeat('.', depth)}#{name} #{pages[name].url}"
+    results.push { name: name, url: pages[name].url }
+    displayPages pages[name].subpages, depth+2, results
+
+selectPage = (pages) ->
+  results = []
+  deferred = q.defer()
+  displayPages pages, 0, results
   commander.prompt('Page: ')
   .then (pageNumber) ->
-    name = names[pageNumber-1]
-    deferred.resolve { name: name, url: pages[name] }
+    result = results[pageNumber-1]
+    deferred.resolve { name: result.name, url: result.url }
   .done()
   return deferred.promise

@@ -91,24 +91,44 @@ class exports.GoogleSite
     .done()
     return deferred.promise
 
+  # Returns a list of pages underneath the page with the specified `id`.
+  getChildPages: (parentURL) ->
+    deferred = q.defer()
+    id = (parentURL.match /(\d+)$/)[1]
+    @apiRequest("parent=#{id}")
+    .then (xml) ->
+      parser = new xml2js.Parser()
+      feed = q.nfcall parser.parseString, xml
+    .then (result) =>
+      promises = []
+      if result.feed.entry
+        pages = _.reduce result.feed.entry, (obj, val) =>
+          pageURL = val.id[0]
+          obj[val.title[0]] = { url: pageURL }
+          qSubPages = @getChildPages pageURL
+          qSubPages.then (subpages) ->
+            obj[val.title[0]].subpages = subpages
+          promises.push qSubPages
+          return obj
+        , {}
+      else
+        pages = []
+      q.all(promises).then ->
+        deferred.resolve pages
+    .done()
+    return deferred.promise
+
   # Returns a list of pages underneath `parentPath`.
   listPages: (parentPath) ->
     deferred = q.defer()
-    parser = new xml2js.Parser()
     @apiRequest("path=#{parentPath}")
     .then (xml) =>
+      parser = new xml2js.Parser()
       return q.nfcall parser.parseString, xml
     .then (result) =>
-      parentUrl = result.feed.entry[0].id[0]
-      id = (parentUrl.match /(\d+)$/)[1]
-      return @apiRequest "parent=#{id}"
-    .then (xml) ->
-      feed = q.nfcall parser.parseString, xml
-    .then (result) =>
-      pages = _.reduce result.feed.entry, (obj, val) ->
-        obj[val.title[0]] = val.id[0]
-        return obj
-      , {}
+      parentURL = result.feed.entry[0].id[0]
+      @getChildPages parentURL
+    .then (pages) ->
       deferred.resolve pages
     .done()
     return deferred.promise
