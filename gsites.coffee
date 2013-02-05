@@ -29,6 +29,10 @@ class exports.GoogleSite
   # We only need to extract the authentication token.
 
   authenticate: (username, password) ->
+    if typeof(password) == "undefined"
+      # No password means we have been passed an authentication token
+      return q.resolve (@authToken = username)
+
     params = {
       Email: username
       Passwd: password

@@ -13,16 +13,33 @@ _s = require 'underscore.string'
 SITE_DOMAIN = 'salsitasoft.com'
 SITE_NAME = 'wiki'
 GITHUB_REMOTE_URL = 'git@github.com:salsita/'
+SETTINGS_PATH = 'settings.json'
 
-site = null
-commander.prompt('Username: ')
-.then (username) ->
-  commander.password('Password: ')
-  .then (password) ->
-    site = new GoogleSite SITE_DOMAIN, SITE_NAME
-    site.authenticate(username, password)
-    .then ->
-      commander.prompt('Project: ')
+settings = {}
+
+readSettings = ->
+  deferred = q.defer()
+  fs.exists(SETTINGS_PATH)
+  .then (exists) ->
+    if !exists
+      deferred.resolve {}
+    else
+      fs.read(SETTINGS_PATH)
+      .then (content) ->
+        deferred.resolve JSON.parse(content)
+      .done()
+  .done()
+  return deferred.promise
+
+site = new GoogleSite SITE_DOMAIN, SITE_NAME
+readSettings()
+.then (value) ->
+  settings = value
+  googleAuthentication(site, settings)
+.then ->
+  writeSettings(settings)
+.then ->
+  commander.prompt('Project: ')
 .then (project) ->
   site.listPages('/projects/' + project)
   .then (pages) ->
@@ -49,6 +66,27 @@ commander.prompt('Username: ')
 .finally ->
   process.exit(0)
 .done()
+
+googleAuthentication = (site, settings) ->
+  deferred = q.defer()
+  if "GoogleAuth" of settings
+    deferred.resolve site.authenticate(settings.GoogleAuth)
+  else
+    commander.prompt('Username: ')
+    .then (username) ->
+      commander.password('Password: ')
+      .then (password) ->
+        site.authenticate(username, password)
+      .then ->
+        settings.GoogleAuth = site.authToken
+        q.resolve true
+      .then ->
+        deferred.resolve()
+      .done()
+  return deferred.promise
+
+writeSettings = (settings) ->
+  return fs.write SETTINGS_PATH, JSON.stringify(settings)
 
 createImagesFolder = (imagesPath) ->
   fs.exists(imagesPath)
@@ -101,7 +139,7 @@ transferPage = (site, repo, pageName, pageURL) ->
 displayPages = (pages, depth, results) ->
   for name of pages
     index = results.length+1
-    console.log "[#{index}] #{_s.repeat('.', depth)}#{name} #{pages[name].url}"
+    console.log "[#{index}] #{_s.repeat('.', depth)}#{name}"
     results.push { name: name, url: pages[name].url }
     displayPages pages[name].subpages, depth+2, results
 
