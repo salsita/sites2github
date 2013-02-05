@@ -8,7 +8,10 @@ Git = (require './git').Git
 fs = require 'q-io/fs'
 url = require 'url'
 path = require 'path'
+_ = require 'underscore'
 _s = require 'underscore.string'
+
+NO_CONTENT_EXCEPTION = 'No content'
 
 SITE_DOMAIN = 'salsitasoft.com'
 SITE_NAME = 'wiki'
@@ -41,23 +44,33 @@ readSettings()
 .then ->
   commander.prompt('Project: ')
 .then (project) ->
-  site.listPages('/projects/' + project)
+  projects = project.split ' '
+  sites_project = projects[0]
+  git_project = if projects.length > 1 then projects[1] else projects[0]
+  site.listPages('/projects/' + sites_project)
   .then (pages) ->
     selectPage(pages)
-  .then (page) ->
-    repo = new Git "#{GITHUB_REMOTE_URL}#{project}.wiki.git"
-    repo.exists()
-    .then (exists) ->
-      if !exists
-        repo.clone()
-      else
-        return q.resolve true
-    .then ->
-      transferPage(site, repo, page.name, page.url)
-    .then ->
-      repo.commit "Migrated #{page.name} from Google Sites"
-    .then ->
-      repo.push()
+  .then (pages) ->
+    if pages
+      repo = new Git "#{GITHUB_REMOTE_URL}#{git_project}.wiki.git"
+      repo.exists()
+      .then (exists) ->
+        if !exists
+          repo.clone()
+        else
+          return q.resolve true
+      .then ->
+        if !_.isArray pages
+          pages = [ pages ]
+        promises = []
+        for page in pages
+          promises.push(transferPage site, repo, page.name, page.url)
+        q.spread promises, ->
+          names = _.pluck(pages, 'name').join ', '
+          console.log names
+          repo.commit "Migrated #{names} from Google Sites"
+        .then ->
+          repo.push()
 .then ->
   console.log 'All done'
 .fail (error) ->
@@ -97,11 +110,13 @@ createImagesFolder = (imagesPath) ->
       return q.resolve true
 
 transferPage = (site, repo, pageName, pageURL) ->
+  console.log "Transferring #{pageName}"
   deferred = q.defer()
   site.getText(pageURL)
   .then (xml) ->
     doc = new DOMParser().parseFromString xml
     contentElement = (doc.getElementsByTagName 'content').item(0)
+    if !contentElement then throw NO_CONTENT_EXCEPTION
     contentHTML = new XMLSerializer().serializeToString contentElement
     markdown = new Markdown
     markdown.fromHTML(contentHTML)
@@ -110,14 +125,13 @@ transferPage = (site, repo, pageName, pageURL) ->
       markdown.fixImages(md)
   .then (result) ->
     # Now we have the markdown and an array of images.
-    console.log 'Saving markdown'
-    filename = "#{repo.rootPath}/#{pageName}.md"
-    console.log(filename)
+    console.log "Saving markdown for #{pageName}"
+    filename = "#{repo.rootPath}/#{pageName.replace /[:\/]/g, ''}.md"
     fs.write(filename, result.markdown)
     .then ->
       repo.add filename
     .then ->
-      console.log 'Getting images'
+      console.log "Getting images for #{pageName}"
       imagesPath = "#{repo.rootPath}/images"
       q.when (result.images.length == 0 || createImagesFolder(imagesPath)), ->
         promises = []
@@ -128,11 +142,17 @@ transferPage = (site, repo, pageName, pageURL) ->
           console.log "Copying #{remoteURL} to #{repo.rootPath}/#{image.localPath}"
           promise = site.getFile(remoteURL, "#{repo.rootPath}/#{image.localPath}")
           promises.push promise
-        q.all(promises)
-        .then ->
+        q.spread promises, ->
           for filePath in arguments
             repo.add filePath
           deferred.resolve()
+  .fail (error) ->
+    if error == NO_CONTENT_EXCEPTION
+      # This is expected so we just return
+      deferred.resolve()
+    else
+      # Rethrow so it is handled by the caller
+      throw error
   .done()
   return deferred.promise
 
@@ -147,9 +167,14 @@ selectPage = (pages) ->
   results = []
   deferred = q.defer()
   displayPages pages, 0, results
-  commander.prompt('Page: ')
+  commander.prompt('Page (or "a" for all): ')
   .then (pageNumber) ->
-    result = results[pageNumber-1]
-    deferred.resolve { name: result.name, url: result.url }
+    if pageNumber == 'a'
+      deferred.resolve ({ name: result.name, url: result.url } for result in results)
+    else if _s.isBlank pageNumber
+      deferred.resolve null # null means we're done
+    else
+      result = results[pageNumber-1]
+      deferred.resolve { name: result.name, url: result.url }
   .done()
   return deferred.promise
