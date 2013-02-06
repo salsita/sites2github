@@ -7,6 +7,11 @@ q = require 'q'
 http = require 'q-io/http'
 fs = require 'q-io/fs'
 url = require 'url'
+path = require 'path'
+
+# For defining class properties (see https://github.com/jashkenas/coffee-script/issues/451)
+Function::define = (prop, desc) ->
+  Object.defineProperty this.prototype, prop, desc
 
 class exports.GoogleSite
   authToken: null
@@ -17,6 +22,10 @@ class exports.GoogleSite
   SITES_DATA_API_HOST: 'sites.google.com'
   CLIENT_LOGIN_PATH: '/accounts/ClientLogin'
   SITES_DATA_API_PATH: '/feeds/content/'
+
+  @define 'urlPrefix'
+    get: ->
+      return "https://#{path.join(@SITES_DATA_API_HOST, 'a', @domain, @site)}"
 
   # Calls the Google web service to get an authentication token.
   # We pass the user name and password in as POST data.
@@ -75,7 +84,7 @@ class exports.GoogleSite
     else
       parsedURL = {
         host: @SITES_DATA_API_HOST
-        path: @SITES_DATA_API_PATH + @domain + '/' + @site + "?#{what}"
+        path: path.join(@SITES_DATA_API_PATH, @domain, @site) + "?#{what}"
       }
     headers = { Authorization: 'GoogleLogin auth=' + @authToken }
     deferred = q.defer()

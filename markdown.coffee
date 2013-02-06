@@ -4,6 +4,7 @@ q = require 'q'
 http = require 'q-io/http'
 url = require 'url'
 path = require 'path'
+_s = require 'underscore.string'
 
 class exports.Markdown
   HOST: 'fuckyeahmarkdown.com'
@@ -29,6 +30,10 @@ class exports.Markdown
     .done()
     return deferred.promise
 
+  # For normal links we check whether the URL starts with the provided prefix.
+  # If so this is a local link and we replace it with the appropriate relative
+  # path to the page (which is just the name of the document).
+  #
   # The converter outputs hyperlinked images as: [![][20]][20].
   # The correct output would be [![][19][20], where 19 is the index of the
   # image URL (see below) and 20 is the index of the URL that the image
@@ -53,17 +58,27 @@ class exports.Markdown
   #
   # What we probably want here is a CoffeeScript or JavaScript implementation of an
   # HTML -> Markdown converter that isn't buggy, so we can get rid of this function entirely.
-  fixImages: (markdown) ->
+  fixLinks: (markdown, projectPrefix) ->
+    console.log projectPrefix
     images = []
+    links = []
     fixed = []
     index = 0
     for line in markdown.split '\n'
       # Is this an indexed URL?
-      match = line.match /^ \[(\d*)\]/
+      match = line.match /^ \[(\d*)\]: (.*)/
       if match
         # If so, do we have an index?
         if match[1]
+          console.log 'BAZ'
           index = match[1]
+          link = match[2]
+          console.log 'BAR: ' + link
+          if _s.startsWith link, projectPrefix
+            # Looks like a link to a local wiki page so convert the URL.
+            console.log 'FOO'
+            console.log links[index]
+            line = " [#{index}]: #{links[index]}"
           fixed.push line
         else
           # If not, add the correct index.
@@ -86,6 +101,14 @@ class exports.Markdown
           # index of the hyperlink.
           fixed.push "#{match[1]}[![][#{match[2]-1}]][#{match[2]}]#{match[3]}"
         else
+          # Check for a normal link with format "[name][index]".
+          matches = line.match /\[[^\]]+\]\[\d+\]/g
+          if matches
+            for str in matches
+              match = str.match /\[([^\]]+)\]\[(\d+)\]/
+              # Remember the link name for when we output the links later.
+              console.log match
+              links[match[2]] = encodeURIComponent match[1]
           fixed.push line
     return {
       markdown: fixed.join "\n"

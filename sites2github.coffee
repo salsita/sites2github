@@ -47,7 +47,9 @@ readSettings()
   projects = project.split ' '
   sites_project = projects[0]
   git_project = if projects.length > 1 then projects[1] else projects[0]
-  site.listPages('/projects/' + sites_project)
+  projectPath = path.join('/projects', sites_project)
+  projectPrefix = site.urlPrefix + projectPath
+  site.listPages(projectPath)
   .then (pages) ->
     selectPage(pages)
   .then (pages) ->
@@ -64,7 +66,7 @@ readSettings()
           pages = [ pages ]
         promises = []
         for page in pages
-          promises.push(transferPage site, repo, page.name, page.url)
+          promises.push(transferPage site, repo, projectPrefix, page.name, page.url)
         q.spread promises, ->
           names = _.pluck(pages, 'name').join ', '
           console.log names
@@ -109,7 +111,7 @@ createImagesFolder = (imagesPath) ->
     else
       return q.resolve true
 
-transferPage = (site, repo, pageName, pageURL) ->
+transferPage = (site, repo, projectPrefix, pageName, pageURL) ->
   console.log "Transferring #{pageName}"
   deferred = q.defer()
   site.getText(pageURL)
@@ -122,7 +124,7 @@ transferPage = (site, repo, pageName, pageURL) ->
     markdown.fromHTML(contentHTML)
     .then (md) ->
       # The Markdown converter doesn't handle images properly so we fix them ourselves.
-      markdown.fixImages(md)
+      markdown.fixLinks(md, projectPrefix)
   .then (result) ->
     # Now we have the markdown and an array of images.
     console.log "Saving markdown for #{pageName}"
