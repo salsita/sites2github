@@ -59,7 +59,6 @@ class exports.Markdown
   # What we probably want here is a CoffeeScript or JavaScript implementation of an
   # HTML -> Markdown converter that isn't buggy, so we can get rid of this function entirely.
   fixLinks: (markdown, projectPrefix) ->
-    console.log projectPrefix
     images = []
     links = []
     fixed = []
@@ -70,14 +69,10 @@ class exports.Markdown
       if match
         # If so, do we have an index?
         if match[1]
-          console.log 'BAZ'
           index = match[1]
           link = match[2]
-          console.log 'BAR: ' + link
           if _s.startsWith link, projectPrefix
             # Looks like a link to a local wiki page so convert the URL.
-            console.log 'FOO'
-            console.log links[index]
             line = " [#{index}]: #{links[index]}"
           fixed.push line
         else
@@ -107,7 +102,6 @@ class exports.Markdown
             for str in matches
               match = str.match /\[([^\]]+)\]\[(\d+)\]/
               # Remember the link name for when we output the links later.
-              console.log match
               links[match[2]] = encodeURIComponent match[1]
           fixed.push line
     return {
